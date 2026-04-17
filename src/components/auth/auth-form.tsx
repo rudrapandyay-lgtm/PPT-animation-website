@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { SubmitButton } from "@/components/ui/submit-button";
 import { type FormState } from "@/lib/validation";
@@ -11,13 +12,7 @@ type AuthFormProps = {
   title: string;
   eyebrow: string;
   subtitle: string;
-  action: (
-    state: FormState | void,
-    formData: FormData,
-  ) => Promise<FormState | void>;
 };
-
-const initialState: FormState = {};
 
 function FieldError({ errors }: { errors?: string[] }) {
   if (!errors?.length) {
@@ -27,8 +22,36 @@ function FieldError({ errors }: { errors?: string[] }) {
   return <p className="text-sm text-rose-300">{errors[0]}</p>;
 }
 
-export function AuthForm({ mode, title, eyebrow, subtitle, action }: AuthFormProps) {
-  const [state, formAction] = useActionState(action, initialState);
+export function AuthForm({ mode, title, eyebrow, subtitle }: AuthFormProps) {
+  const [state, setState] = useState<FormState>({});
+  const router = useRouter();
+
+  async function onSubmit(formData: FormData) {
+    setState({});
+    const payload = {
+      name: formData.get("name"),
+      email: formData.get("email"),
+      password: formData.get("password"),
+    };
+
+    const response = await fetch(`/api/auth/${mode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const result = (await response.json().catch(() => null)) as FormState | null;
+
+    if (!response.ok) {
+      setState(result ?? { message: "Something went wrong." });
+      return;
+    }
+
+    if (result?.redirectTo) {
+      router.push(result.redirectTo);
+      router.refresh();
+    }
+  }
 
   return (
     <div className="grid min-h-screen bg-[#050816] text-white lg:grid-cols-[1.1fr_0.9fr]">
@@ -61,7 +84,12 @@ export function AuthForm({ mode, title, eyebrow, subtitle, action }: AuthFormPro
           <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
           <p className="mt-3 text-sm leading-6 text-slate-300">{subtitle}</p>
 
-          <form action={formAction} className="mt-8 space-y-5">
+          <form
+            action={async (formData) => {
+              await onSubmit(formData);
+            }}
+            className="mt-8 space-y-5"
+          >
             {mode === "sign-up" ? (
               <label className="block space-y-2">
                 <span className="text-sm text-slate-300">Name</span>

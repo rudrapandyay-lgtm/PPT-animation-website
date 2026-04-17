@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { createPresentationAction } from "@/app/actions/presentations";
-import { signOutAction } from "@/app/actions/auth";
 import { ImportDeckCard } from "@/components/dashboard/import-deck-card";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -61,7 +60,7 @@ export default async function DashboardPage() {
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">Welcome back, {user.name.split(" ")[0]}</h1>
             <p className="mt-2 text-sm text-slate-300">Create a polished deck, refine motion, and share a protected client link.</p>
           </div>
-          <form action={signOutAction}>
+          <form action="/api/auth/sign-out" method="post">
             <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm hover:bg-white/10">
               Sign out
             </button>

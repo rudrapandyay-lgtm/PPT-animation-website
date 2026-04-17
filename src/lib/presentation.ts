@@ -51,58 +51,119 @@ function buildTemplateCreateData(templateKey: string, userId: string, workspaceI
   };
 }
 
+function buildPresentationInsertGraph(
+  slides: Array<{
+    title: string;
+    notes?: string;
+    background: Prisma.InputJsonValue;
+    transition: Prisma.InputJsonValue;
+    elements: Array<{
+      type: "TEXT" | "IMAGE" | "SHAPE";
+      name: string;
+      content: Prisma.InputJsonValue;
+      position: Prisma.InputJsonValue;
+      style: Prisma.InputJsonValue;
+      animation: {
+        preset: "FADE_IN" | "SLIDE_UP" | "SLIDE_LEFT" | "ZOOM_IN" | "STAGGER";
+        durationMs: number;
+        delayMs: number;
+      };
+    }>;
+  }>,
+  presentationId: string,
+) {
+  const slideRows: Prisma.SlideCreateManyInput[] = [];
+  const elementRows: Prisma.ElementCreateManyInput[] = [];
+  const animationRows: Prisma.AnimationCreateManyInput[] = [];
+
+  for (let slideIndex = 0; slideIndex < slides.length; slideIndex += 1) {
+    const slideId = randomUUID();
+    const slide = slides[slideIndex];
+    slideRows.push({
+      id: slideId,
+      presentationId,
+      sortOrder: slideIndex,
+      title: slide.title,
+      notes: slide.notes ?? null,
+      background: slide.background,
+      transition: slide.transition,
+    });
+
+    for (let elementIndex = 0; elementIndex < slide.elements.length; elementIndex += 1) {
+      const elementId = randomUUID();
+      const element = slide.elements[elementIndex];
+      elementRows.push({
+        id: elementId,
+        slideId,
+        sortOrder: elementIndex,
+        type: element.type,
+        name: element.name,
+        content: element.content,
+        position: element.position,
+        style: element.style,
+      });
+      animationRows.push({
+        id: randomUUID(),
+        elementId,
+        preset: element.animation.preset,
+        durationMs: element.animation.durationMs,
+        delayMs: element.animation.delayMs,
+        easing: "easeOut",
+      });
+    }
+  }
+
+  return { slideRows, elementRows, animationRows };
+}
+
 export async function createPresentationFromTemplate(templateKey: string, userId: string, workspaceId: string) {
   const data = buildTemplateCreateData(templateKey, userId, workspaceId);
+  const projectId = randomUUID();
+  const presentationId = randomUUID();
+  const { slideRows, elementRows, animationRows } = buildPresentationInsertGraph(
+    data.presentation.slides.map((slide) => ({
+      title: slide.title,
+      background: slide.background,
+      transition: slide.transition,
+      elements: slide.elements.map((element) => ({
+        type: element.type,
+        name: element.name,
+        content: element.content,
+        position: element.position,
+        style: element.style,
+        animation: element.animation,
+      })),
+    })),
+    presentationId,
+  );
 
-  const project = await prisma.project.create({
-    data: {
-      workspaceId: data.project.workspaceId,
-      name: data.project.name,
-      description: data.project.description,
-      createdByUserId: data.project.createdByUserId,
-      presentations: {
-        create: {
-          name: data.presentation.name,
-          templateKey: data.presentation.templateKey,
-          accent: data.presentation.accent,
-          sourceType: data.presentation.sourceType,
-          createdByUserId: data.presentation.createdByUserId,
-          slides: {
-            create: data.presentation.slides.map((slide) => ({
-              sortOrder: slide.sortOrder,
-              title: slide.title,
-              background: slide.background,
-              transition: slide.transition,
-              elements: {
-                create: slide.elements.map((element) => ({
-                  sortOrder: element.sortOrder,
-                  type: element.type,
-                  name: element.name,
-                  content: element.content,
-                  position: element.position,
-                  style: element.style,
-                  animation: {
-                    create: {
-                      preset: element.animation.preset,
-                      durationMs: element.animation.durationMs,
-                      delayMs: element.animation.delayMs,
-                    },
-                  },
-                })),
-              },
-            })),
-          },
-        },
+  await prisma.$transaction([
+    prisma.project.create({
+      data: {
+        id: projectId,
+        workspaceId: data.project.workspaceId,
+        name: data.project.name,
+        description: data.project.description,
+        createdByUserId: data.project.createdByUserId,
       },
-    },
-    include: {
-      presentations: {
-        take: 1,
+    }),
+    prisma.presentation.create({
+      data: {
+        id: presentationId,
+        projectId,
+        name: data.presentation.name,
+        templateKey: data.presentation.templateKey,
+        accent: data.presentation.accent,
+        sourceType: data.presentation.sourceType,
+        createdByUserId: data.presentation.createdByUserId,
       },
-    },
-  });
+    }),
+    prisma.slide.createMany({ data: slideRows }),
+    prisma.element.createMany({ data: elementRows }),
+    prisma.animation.createMany({ data: animationRows }),
+  ]);
 
-  return project.presentations[0];
+  return prisma.presentation.findUniqueOrThrow({ where: { id: presentationId } });
 }
 
 export async function createPresentationFromPptxImport(
@@ -294,6 +355,28 @@ export async function savePresentationFromPayload(presentationId: string, userId
     throw new Error("Presentation not found.");
   }
 
+  const { slideRows, elementRows, animationRows } = buildPresentationInsertGraph(
+    payload.slides.map((slide) => ({
+      title: slide.title ?? "Untitled slide",
+      notes: slide.notes ?? undefined,
+      background: slide.background as Prisma.InputJsonValue,
+      transition: slide.transition as Prisma.InputJsonValue,
+      elements: slide.elements.map((element) => ({
+        type: element.type,
+        name: element.name,
+        content: element.content as Prisma.InputJsonValue,
+        position: element.position as Prisma.InputJsonValue,
+        style: element.style as Prisma.InputJsonValue,
+        animation: {
+          preset: element.animation.preset,
+          durationMs: element.animation.durationMs,
+          delayMs: element.animation.delayMs,
+        },
+      })),
+    })),
+    presentationId,
+  );
+
   await prisma.$transaction(async (tx) => {
     await tx.animation.deleteMany({
       where: {
@@ -322,34 +405,12 @@ export async function savePresentationFromPayload(presentationId: string, userId
       data: {
         name: payload.name,
         accent: payload.accent,
-        slides: {
-            create: payload.slides.map((slide, slideIndex) => ({
-              sortOrder: slideIndex,
-              title: slide.title,
-              notes: slide.notes ?? null,
-              background: slide.background as Prisma.InputJsonValue,
-            transition: slide.transition as Prisma.InputJsonValue,
-            elements: {
-              create: slide.elements.map((element, elementIndex) => ({
-                sortOrder: elementIndex,
-                type: element.type,
-                name: element.name,
-                content: element.content as Prisma.InputJsonValue,
-                position: element.position as Prisma.InputJsonValue,
-                style: element.style as Prisma.InputJsonValue,
-                animation: {
-                  create: {
-                    preset: element.animation.preset,
-                    durationMs: element.animation.durationMs,
-                    delayMs: element.animation.delayMs,
-                  },
-                },
-              })),
-            },
-          })),
-        },
       },
     });
+
+    await tx.slide.createMany({ data: slideRows });
+    await tx.element.createMany({ data: elementRows });
+    await tx.animation.createMany({ data: animationRows });
   });
 
   return getPresentationForEditor(presentationId, userId);

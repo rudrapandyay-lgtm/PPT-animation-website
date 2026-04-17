@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-import { signInAction } from "@/app/actions/auth";
 import { AuthForm } from "@/components/auth/auth-form";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -17,7 +16,6 @@ export default async function SignInPage() {
       title="Welcome back"
       eyebrow="Sign in"
       subtitle="Access your workspace, update deck motion, and send polished presentation links to clients."
-      action={signInAction}
     />
   );
 }

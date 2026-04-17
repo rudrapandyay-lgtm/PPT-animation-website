@@ -62,4 +62,5 @@ export const shareLinkSchema = z.object({
 export type FormState = {
   message?: string;
   fieldErrors?: Record<string, string[]>;
+  redirectTo?: string;
 };

@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -13,6 +14,17 @@ import { renderPresentationHtml } from "@/lib/export/presentation-html";
 import { getPresentationForEditor, toPresentationDocument } from "@/lib/presentation";
 
 const execFileAsync = promisify(execFile);
+
+function resolveFfmpegPath() {
+  const candidates = [
+    ffmpegPath,
+    process.env.FFMPEG_BIN,
+    path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg.exe"),
+    path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg"),
+  ].filter((value): value is string => Boolean(value));
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
 
 export async function GET(
   _request: Request,
@@ -31,7 +43,9 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (!ffmpegPath) {
+  const binaryPath = resolveFfmpegPath();
+
+  if (!binaryPath) {
     return NextResponse.json({ error: "Bundled ffmpeg binary not available." }, { status: 500 });
   }
 
@@ -78,7 +92,7 @@ export async function GET(
       await browser.close();
     }
 
-    await execFileAsync(ffmpegPath, [
+    await execFileAsync(binaryPath, [
       "-y",
       "-f",
       "concat",
