@@ -1,0 +1,203 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  OWNER
+  EDITOR
+}
+
+enum PresentationSource {
+  TEMPLATE
+  WEB_EDITOR
+}
+
+enum ElementType {
+  TEXT
+  IMAGE
+  SHAPE
+}
+
+enum AnimationPreset {
+  FADE_IN
+  SLIDE_UP
+  SLIDE_LEFT
+  ZOOM_IN
+  STAGGER
+}
+
+enum ImportStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+model User {
+  id              String            @id @default(cuid())
+  email           String            @unique
+  name            String
+  passwordHash    String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  ownedWorkspaces Workspace[]       @relation("WorkspaceOwner")
+  memberships     WorkspaceMember[]
+  createdProjects Project[]         @relation("ProjectCreator")
+  presentations   Presentation[]    @relation("PresentationCreator")
+  importJobs      ImportJob[]
+}
+
+model Workspace {
+  id          String            @id @default(cuid())
+  name        String
+  slug        String            @unique
+  ownerUserId String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  owner       User              @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  members     WorkspaceMember[]
+  projects    Project[]
+  importJobs  ImportJob[]
+}
+
+model WorkspaceMember {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        MemberRole @default(EDITOR)
+  createdAt   DateTime   @default(now())
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Project {
+  id              String         @id @default(cuid())
+  workspaceId     String
+  name            String
+  description     String?
+  createdByUserId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy       User?          @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  presentations   Presentation[]
+  assets          Asset[]
+}
+
+model Presentation {
+  id              String             @id @default(cuid())
+  projectId       String
+  name            String
+  sourceType      PresentationSource @default(TEMPLATE)
+  templateKey     String?
+  accent          String             @default("violet")
+  createdByUserId String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy       User?              @relation("PresentationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  slides          Slide[]
+  shareLinks      ShareLink[]
+  importJobs      ImportJob[]
+}
+
+model Slide {
+  id             String         @id @default(cuid())
+  presentationId String
+  sortOrder      Int
+  title          String?
+  notes          String?
+  background     Json
+  transition     Json
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  presentation   Presentation   @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  elements       Element[]
+
+  @@unique([presentationId, sortOrder])
+}
+
+model Element {
+  id         String       @id @default(cuid())
+  slideId    String
+  sortOrder  Int
+  type       ElementType
+  name       String
+  content    Json
+  position   Json
+  style      Json
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  slide      Slide        @relation(fields: [slideId], references: [id], onDelete: Cascade)
+  animation  Animation?
+
+  @@unique([slideId, sortOrder])
+}
+
+model Animation {
+  id          String          @id @default(cuid())
+  elementId   String          @unique
+  preset      AnimationPreset
+  durationMs  Int             @default(700)
+  delayMs     Int             @default(0)
+  easing      String          @default("easeOut")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  element     Element         @relation(fields: [elementId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  url         String
+  kind        String
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ShareLink {
+  id              String   @id @default(cuid())
+  presentationId  String
+  token           String   @unique
+  label           String   @default("Client share")
+  coverLabel      String   @default("Shared presentation")
+  coverTitle      String?
+  coverSubtitle   String?
+  coverButtonText String   @default("Enter presentation")
+  passcodeHash    String?
+  passcodeEnabled Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  presentation    Presentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+}
+
+model ImportJob {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  requestedById  String
+  presentationId String?
+  sourceFilename String
+  sourceMimeType String
+  storedPath     String
+  status         ImportStatus @default(UPLOADED)
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedBy    User         @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  presentation   Presentation? @relation(fields: [presentationId], references: [id], onDelete: SetNull)
+}
